@@ -47,6 +47,19 @@ export default {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
+        energy: {
+          primary: "hsl(var(--energy-primary))",
+          secondary: "hsl(var(--energy-secondary))",
+          warning: "hsl(var(--energy-warning))",
+          danger: "hsl(var(--energy-danger))",
+          success: "hsl(var(--energy-success))",
+        },
+        wave: {
+          primary: "hsl(var(--wave-primary))",
+          secondary: "hsl(var(--wave-secondary))",
+          tertiary: "hsl(var(--wave-tertiary))",
+          quaternary: "hsl(var(--wave-quaternary))",
+        },
         sidebar: {
           DEFAULT: "hsl(var(--sidebar-background))",
           foreground: "hsl(var(--sidebar-foreground))",
