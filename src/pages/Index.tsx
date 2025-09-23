@@ -68,24 +68,33 @@ const Index = () => {
     return () => clearInterval(interval);
   }, [isSimulating]);
 
-  const { aggregatedSignal, individualSignatures } = useMemo(() => {
+  const { aggregatedSignal, individualSignatures, referenceSignatures } = useMemo(() => {
     const signatures: Record<string, any[]> = {};
-    const allSignatures: any[][] = [];
+    const references: Record<string, any[]> = {};
+    const allActiveSignatures: any[][] = [];
 
     appliances.forEach(appliance => {
       const signature = waveformGenerator.generateApplianceSignature(appliance, simulationTime || 1000);
+      const reference = waveformGenerator.generateReferenceSignature(appliance, 500);
+      
       signatures[appliance.id] = signature;
+      references[appliance.id] = reference;
       
       if (appliance.isOn) {
-        allSignatures.push(signature);
+        allActiveSignatures.push(signature);
       }
     });
 
-    const aggregated = waveformGenerator.aggregateSignatures(allSignatures);
+    // Pass active appliances to aggregation for real-time response
+    const aggregated = waveformGenerator.aggregateSignatures(
+      appliances.map(a => signatures[a.id]), 
+      appliances
+    );
 
     return {
       aggregatedSignal: aggregated,
       individualSignatures: signatures,
+      referenceSignatures: references,
     };
   }, [appliances, simulationTime]);
 
@@ -186,6 +195,7 @@ const Index = () => {
               appliances={appliances}
               aggregatedSignal={aggregatedSignal}
               individualSignatures={individualSignatures}
+              referenceSignatures={referenceSignatures}
             />
           </div>
           

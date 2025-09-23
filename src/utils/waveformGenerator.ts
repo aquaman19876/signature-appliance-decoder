@@ -91,40 +91,109 @@ export class WaveformGenerator {
     return Math.max(basePower * 0.3, basePower + speedVariation + motorNoise + randomLoad);
   }
   
-  aggregateSignatures(signatures: PowerSignature[][]): PowerSignature[] {
-    if (signatures.length === 0) return [];
+  aggregateSignatures(signatures: PowerSignature[][], activeAppliances: Appliance[]): PowerSignature[] {
+    if (signatures.length === 0) {
+      // Return baseline consumption even when no appliances are on
+      return this.generateBaselineSignature();
+    }
     
     const maxLength = Math.max(...signatures.map(s => s.length));
     const aggregated: PowerSignature[] = [];
     
     for (let i = 0; i < maxLength; i++) {
-      let totalPower = 0;
-      let avgVoltage = 0;
-      let totalCurrent = 0;
+      let totalPower = 10; // Base household consumption
+      let avgVoltage = 220;
+      let totalCurrent = 0.05; // Base current
       let validSamples = 0;
-      let time = 0;
+      let time = i * (1000 / this.sampleRate);
       
-      signatures.forEach(signature => {
-        if (signature[i]) {
+      // Only add power from currently active appliances
+      signatures.forEach((signature, index) => {
+        const appliance = activeAppliances[index];
+        if (signature[i] && appliance && appliance.isOn) {
           totalPower += signature[i].power;
           avgVoltage += signature[i].voltage;
           totalCurrent += signature[i].current;
-          time = signature[i].time;
           validSamples++;
         }
       });
       
       if (validSamples > 0) {
-        aggregated.push({
-          time,
-          power: totalPower,
-          voltage: avgVoltage / validSamples,
-          current: totalCurrent,
-        });
+        avgVoltage = avgVoltage / (validSamples + 1); // +1 for base voltage
       }
+      
+      // Add realistic grid variations
+      totalPower += Math.sin(time * 0.01) * 2 + (Math.random() - 0.5) * 1;
+      
+      aggregated.push({
+        time,
+        power: Math.max(0, totalPower),
+        voltage: avgVoltage,
+        current: totalCurrent,
+      });
     }
     
     return aggregated;
+  }
+  
+  private generateBaselineSignature(): PowerSignature[] {
+    const samples: PowerSignature[] = [];
+    const samplesCount = 100; // 2 seconds at 50Hz
+    
+    for (let i = 0; i < samplesCount; i++) {
+      const time = i * (1000 / this.sampleRate);
+      const basePower = 8 + Math.sin(time * 0.005) * 2 + (Math.random() - 0.5) * 0.5;
+      
+      samples.push({
+        time,
+        power: Math.max(0, basePower),
+        voltage: 220 + (Math.random() - 0.5) * 2,
+        current: 0.04 + (Math.random() - 0.5) * 0.01,
+      });
+    }
+    
+    return samples;
+  }
+  
+  // Generate clean reference signature for pattern matching
+  generateReferenceSignature(appliance: Appliance, duration: number = 1000): PowerSignature[] {
+    const samples: PowerSignature[] = [];
+    const samplesCount = Math.floor(duration * this.sampleRate / 1000);
+    
+    for (let i = 0; i < samplesCount; i++) {
+      const timeMs = i * (1000 / this.sampleRate);
+      let power = 0;
+      
+      // Generate clean signature without noise for pattern matching
+      switch (appliance.type) {
+        case 'bulb':
+          power = appliance.powerRating * (1 + Math.sin(timeMs * 0.001) * 0.02);
+          break;
+        case 'tube_light':
+          power = appliance.powerRating * (0.95 + Math.sin(timeMs * 0.628) * 0.05);
+          break;
+        case 'fan':
+          if (timeMs < 500) {
+            const rampUp = 1 - Math.exp(-timeMs / 150);
+            power = appliance.powerRating * (2 * (1 - rampUp) + rampUp);
+          } else {
+            power = appliance.powerRating * (1 + Math.sin(timeMs * 0.005) * 0.1);
+          }
+          break;
+        default:
+          power = appliance.powerRating;
+      }
+      
+      samples.push({
+        time: timeMs,
+        power: Math.max(0, power),
+        voltage: appliance.voltage,
+        current: power / (appliance.voltage * (appliance.powerFactor || 1)),
+        applianceId: appliance.id,
+      });
+    }
+    
+    return samples;
   }
 }
 
