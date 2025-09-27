@@ -3,7 +3,7 @@ export interface Appliance {
   name: string;
   brand: string;
   model: string;
-  type: 'bulb' | 'tube_light' | 'fan' | 'ac' | 'refrigerator';
+  type: 'bulb' | 'tube_light' | 'fan' | 'ac' | 'refrigerator' | 'microwave' | 'washing_machine' | 'fridge';
   powerRating: number; // watts
   voltage: number; // volts
   current: number; // amperes
@@ -87,5 +87,47 @@ export const DEFAULT_APPLIANCES: Appliance[] = [
     powerFactor: 0.9,
     isOn: false,
     efficiency: 90,
+  },
+  {
+    id: 'samsung-microwave',
+    name: 'Microwave Oven 1000W',
+    brand: 'Samsung',
+    model: 'MG23K3515AK',
+    type: 'microwave',
+    powerRating: 1000,
+    voltage: 230,
+    current: 4.5,
+    powerFactor: 0.95,
+    isOn: false,
+    startupPower: 1200,
+    efficiency: 70,
+  },
+  {
+    id: 'whirlpool-washing-machine',
+    name: 'Washing Machine 2000W',
+    brand: 'Whirlpool',
+    model: '7.5kg Front Load',
+    type: 'washing_machine',
+    powerRating: 2000,
+    voltage: 230,
+    current: 9.0,
+    powerFactor: 0.9,
+    isOn: false,
+    startupPower: 2500,
+    efficiency: 80,
+  },
+  {
+    id: 'lg-refrigerator',
+    name: 'Refrigerator 150W',
+    brand: 'LG',
+    model: '285L Double Door',
+    type: 'fridge',
+    powerRating: 150,
+    voltage: 230,
+    current: 0.7,
+    powerFactor: 0.8,
+    isOn: false,
+    startupPower: 300,
+    efficiency: 85,
   },
 ];

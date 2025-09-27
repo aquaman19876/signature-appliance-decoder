@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ApplianceSwitch } from '@/components/ApplianceSwitch';
 import { WaveformChart } from '@/components/WaveformChart';
-import { PatternRecognition } from '@/components/PatternRecognition';
+import { PatternRecognition, EnergyDisaggregator } from '@/components/PatternRecognition';
 import { DEFAULT_APPLIANCES } from '@/types/appliance';
 import { waveformGenerator } from '@/utils/waveformGenerator';
 import { toast } from 'sonner';
@@ -68,33 +68,51 @@ const Index = () => {
     return () => clearInterval(interval);
   }, [isSimulating]);
 
-  const { aggregatedSignal, individualSignatures, referenceSignatures } = useMemo(() => {
+  const { aggregatedSignal, individualSignatures, referenceSignatures, disaggregationResults } = useMemo(() => {
     const signatures: Record<string, any[]> = {};
     const references: Record<string, any[]> = {};
-    const allActiveSignatures: any[][] = [];
 
+    // Generate signatures for ALL appliances (for reference patterns)
     appliances.forEach(appliance => {
-      const signature = waveformGenerator.generateApplianceSignature(appliance, simulationTime || 1000);
       const reference = waveformGenerator.generateReferenceSignature(appliance, 500);
-      
-      signatures[appliance.id] = signature;
       references[appliance.id] = reference;
-      
-      if (appliance.isOn) {
-        allActiveSignatures.push(signature);
-      }
     });
 
-    // Pass active appliances to aggregation for real-time response
-    const aggregated = waveformGenerator.aggregateSignatures(
-      appliances.map(a => signatures[a.id]), 
-      appliances
+    // Generate individual signatures ONLY for currently active appliances
+    const activeAppliances = appliances.filter(a => a.isOn);
+    activeAppliances.forEach(appliance => {
+      const signature = waveformGenerator.generateApplianceSignature(appliance, simulationTime || 1000);
+      signatures[appliance.id] = signature;
+    });
+
+    // Create real-time aggregated signal that reflects current appliance states
+    // This simulates a real electric meter that measures total power in real-time
+    const aggregated = waveformGenerator.generateRealtimeAggregatedSignal(
+      appliances, 
+      simulationTime || 1000
+    );
+
+    // Debug: Log the aggregated signal to verify it's working correctly
+    console.log('Active appliances:', appliances.filter(a => a.isOn).map(a => a.name));
+    console.log('Aggregated signal power range:', 
+      Math.min(...aggregated.map(s => s.power)).toFixed(1), 
+      'to', 
+      Math.max(...aggregated.map(s => s.power)).toFixed(1)
+    );
+
+    // Generate disaggregation results by analyzing the aggregated signal
+    const disaggregationResults = EnergyDisaggregator.disaggregate(
+      aggregated,
+      appliances,
+      signatures,
+      references
     );
 
     return {
       aggregatedSignal: aggregated,
       individualSignatures: signatures,
       referenceSignatures: references,
+      disaggregationResults,
     };
   }, [appliances, simulationTime]);
 
@@ -207,6 +225,9 @@ const Index = () => {
               data={aggregatedSignal}
               showIndividual={true}
               appliances={appliances}
+              disaggregationResults={disaggregationResults}
+              showActualStates={true}
+              showPredictions={true}
               height={350}
             />
             

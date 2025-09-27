@@ -1,16 +1,19 @@
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ReferenceLine, ResponsiveContainer } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ReferenceLine, ResponsiveContainer, Area, AreaChart, ComposedChart } from 'recharts';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { PowerSignature, DisaggregationResult } from '@/types/appliance';
-import { Activity, Zap, TrendingUp } from 'lucide-react';
+import { PowerSignature, DisaggregationResult, Appliance } from '@/types/appliance';
+import { Activity, Zap, TrendingUp, Eye, EyeOff, ToggleLeft, ToggleRight } from 'lucide-react';
+import { useState } from 'react';
 
 interface WaveformChartProps {
   title: string;
   data: PowerSignature[];
   showIndividual?: boolean;
-  appliances?: any[];
+  appliances?: Appliance[];
   disaggregationResults?: DisaggregationResult[];
   height?: number;
+  showPredictions?: boolean;
+  showActualStates?: boolean;
 }
 
 export const WaveformChart = ({ 
@@ -19,8 +22,12 @@ export const WaveformChart = ({
   showIndividual = false, 
   appliances = [],
   disaggregationResults = [],
-  height = 300 
+  height = 300,
+  showPredictions = false,
+  showActualStates = false
 }: WaveformChartProps) => {
+  const [showActual, setShowActual] = useState(showActualStates);
+  const [showPredicted, setShowPredicted] = useState(showPredictions);
   
   const formatTooltip = (value: any, name: string) => {
     if (name.includes('power')) return [`${value.toFixed(2)} W`, name];
@@ -30,9 +37,51 @@ export const WaveformChart = ({
   };
 
   const getLineColor = (index: number) => {
-    const colors = ['hsl(var(--wave-primary))', 'hsl(var(--wave-secondary))', 'hsl(var(--wave-tertiary))', 'hsl(var(--wave-quaternary))'];
+    const colors = [
+      'hsl(var(--energy-primary))', 
+      'hsl(var(--energy-secondary))', 
+      'hsl(var(--energy-success))', 
+      'hsl(var(--energy-warning))',
+      'hsl(var(--energy-danger))',
+      '#8B5CF6', // Purple
+      '#06B6D4', // Cyan
+      '#10B981'  // Emerald
+    ];
     return colors[index % colors.length];
   };
+
+  const getApplianceColor = (applianceId: string) => {
+    const index = appliances.findIndex(a => a.id === applianceId);
+    return getLineColor(index);
+  };
+
+  // Generate enhanced data with color coding and predictions
+  const enhancedData = data.map((point, index) => {
+    const enhancedPoint: any = { ...point };
+    
+    if (showActual && appliances) {
+      // Add actual appliance states as colored segments
+      appliances.forEach(appliance => {
+        if (appliance.isOn) {
+          enhancedPoint[`${appliance.id}_actual`] = point.power;
+        }
+      });
+    }
+    
+    if (showPredicted && disaggregationResults) {
+      // Add prediction data based on disaggregation results
+      disaggregationResults.forEach(result => {
+        const isDetected = result.detectedPeriods.some(period => 
+          point.time >= period.startTime && point.time <= period.endTime
+        );
+        if (isDetected) {
+          enhancedPoint[`${result.appliance.id}_predicted`] = point.power;
+        }
+      });
+    }
+    
+    return enhancedPoint;
+  });
 
   const renderAnnotations = () => {
     return disaggregationResults.map((result, index) => (
@@ -59,22 +108,52 @@ export const WaveformChart = ({
           <Activity className="w-5 h-5 text-energy-primary" />
           <h3 className="text-lg font-semibold">{title}</h3>
         </div>
-        <div className="flex items-center gap-2">
-          <Badge variant="outline" className="flex items-center gap-1">
-            <TrendingUp className="w-3 h-3" />
-            {data.length} samples
-          </Badge>
-          {data.length > 0 && (
-            <Badge variant="outline" className="flex items-center gap-1">
-              <Zap className="w-3 h-3" />
-              {Math.max(...data.map(d => d.power)).toFixed(1)}W peak
-            </Badge>
+        <div className="flex items-center gap-4">
+          {/* Toggle Controls */}
+          {(showActualStates || showPredictions) && (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setShowActual(!showActual)}
+                className={`flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors ${
+                  showActual 
+                    ? 'bg-energy-primary text-white' 
+                    : 'bg-muted text-muted-foreground hover:bg-muted/80'
+                }`}
+              >
+                <Eye className="w-3 h-3" />
+                Actual
+              </button>
+              <button
+                onClick={() => setShowPredicted(!showPredicted)}
+                className={`flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors ${
+                  showPredicted 
+                    ? 'bg-energy-secondary text-white' 
+                    : 'bg-muted text-muted-foreground hover:bg-muted/80'
+                }`}
+              >
+                <EyeOff className="w-3 h-3" />
+                Predicted
+              </button>
+            </div>
           )}
+          
+          <div className="flex items-center gap-2">
+            <Badge variant="outline" className="flex items-center gap-1">
+              <TrendingUp className="w-3 h-3" />
+              {data.length} samples
+            </Badge>
+            {data.length > 0 && (
+              <Badge variant="outline" className="flex items-center gap-1">
+                <Zap className="w-3 h-3" />
+                {Math.max(...data.map(d => d.power)).toFixed(1)}W peak
+              </Badge>
+            )}
+          </div>
         </div>
       </div>
       
       <ResponsiveContainer width="100%" height={height}>
-        <LineChart data={data} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+        <ComposedChart data={enhancedData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
           <XAxis 
             dataKey="time" 
@@ -99,30 +178,45 @@ export const WaveformChart = ({
           />
           <Legend fontSize={12} />
           
+          {/* Main power line */}
           <Line
             type="monotone"
             dataKey="power"
-            stroke="hsl(var(--wave-primary))"
-            strokeWidth={2}
+            stroke="hsl(var(--foreground))"
+            strokeWidth={3}
             dot={false}
-            name="Power (W)"
+            name="Total Power (W)"
           />
           
-          {showIndividual && appliances.filter(a => a.isOn).map((appliance, index) => (
+          {/* Actual appliance states - solid lines */}
+          {showActual && appliances.filter(a => a.isOn).map((appliance) => (
             <Line
-              key={appliance.id}
+              key={`${appliance.id}_actual`}
               type="monotone"
-              dataKey={`${appliance.id}_power`}
-              stroke={getLineColor(index + 1)}
-              strokeWidth={1.5}
-              strokeDasharray="5 5"
+              dataKey={`${appliance.id}_actual`}
+              stroke={getApplianceColor(appliance.id)}
+              strokeWidth={2}
               dot={false}
-              name={`${appliance.name} (W)`}
+              name={`${appliance.name} (Actual)`}
+            />
+          ))}
+          
+          {/* Predicted appliance states - dashed lines */}
+          {showPredicted && disaggregationResults.map((result) => (
+            <Line
+              key={`${result.appliance.id}_predicted`}
+              type="monotone"
+              dataKey={`${result.appliance.id}_predicted`}
+              stroke={getApplianceColor(result.appliance.id)}
+              strokeWidth={2}
+              strokeDasharray="8 4"
+              dot={false}
+              name={`${result.appliance.name} (Predicted)`}
             />
           ))}
           
           {renderAnnotations()}
-        </LineChart>
+        </ComposedChart>
       </ResponsiveContainer>
       
       {disaggregationResults.length > 0 && (

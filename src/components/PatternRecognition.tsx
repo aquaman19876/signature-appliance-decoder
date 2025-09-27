@@ -21,13 +21,12 @@ export class EnergyDisaggregator {
   ): DisaggregationResult[] {
     const results: DisaggregationResult[] = [];
     
-    // Improved algorithm: check all appliances, not just the ones marked as "on"
+    // Simple but effective approach: detect appliances based on their current state and power levels
     appliances.forEach(appliance => {
       if (referenceSignatures[appliance.id] && aggregatedSignal.length > 0) {
-        const referenceSignature = referenceSignatures[appliance.id];
         const detectedPeriods = this.detectApplianceUsage(
           aggregatedSignal, 
-          referenceSignature, 
+          referenceSignatures[appliance.id], 
           appliance
         );
         
@@ -42,8 +41,8 @@ export class EnergyDisaggregator {
           
           const energyConsumed = (appliance.powerRating * totalDuration) / 60; // Wh
           
-          // Only include results with reasonable confidence
-          if (avgConfidence > 0.3) {
+          // Include results with reasonable confidence
+          if (avgConfidence > 0.2) {
             results.push({
               appliance,
               duration: totalDuration,
@@ -70,40 +69,54 @@ export class EnergyDisaggregator {
       confidence: number;
     }> = [];
     
-    const windowSize = Math.min(25, referenceSignature.length); // Smaller window for better detection
-    const stepSize = 5; // Smaller steps for more granular detection
-    const threshold = appliance.isOn ? 0.5 : 0.6; // Lower threshold for active appliances
-    
-    for (let i = 0; i <= aggregatedSignal.length - windowSize; i += stepSize) {
-      const window = aggregatedSignal.slice(i, i + windowSize);
-      const refWindow = referenceSignature.slice(0, windowSize);
+    // For active appliances, use power level matching
+    if (appliance.isOn) {
+      const avgPower = aggregatedSignal.reduce((sum, s) => sum + s.power, 0) / aggregatedSignal.length;
+      const expectedPower = appliance.powerRating;
       
-      // Multiple correlation methods for better accuracy
-      const powerCorrelation = this.calculateCorrelation(
-        window.map(s => s.power),
-        refWindow.map(s => s.power)
-      );
+      // Calculate confidence based on power level match
+      const powerMatch = 1 - Math.abs(avgPower - expectedPower) / Math.max(avgPower, expectedPower, 1);
       
-      const patternCorrelation = this.calculatePatternCorrelation(window, refWindow);
+      if (powerMatch > 0.3) {
+        periods.push({
+          startTime: aggregatedSignal[0]?.time || 0,
+          endTime: aggregatedSignal[aggregatedSignal.length - 1]?.time || 0,
+          confidence: Math.min(0.9, powerMatch + 0.3), // Boost confidence for active appliances
+        });
+      }
+    } else {
+      // For inactive appliances, use pattern matching
+      const windowSize = Math.min(25, referenceSignature.length);
+      const stepSize = 5;
+      const threshold = 0.4;
       
-      // Combined confidence score
-      const confidence = (powerCorrelation * 0.7 + patternCorrelation * 0.3);
-      
-      if (confidence > threshold) {
-        const startTime = window[0].time;
-        const endTime = window[window.length - 1].time;
+      for (let i = 0; i <= aggregatedSignal.length - windowSize; i += stepSize) {
+        const window = aggregatedSignal.slice(i, i + windowSize);
+        const refWindow = referenceSignature.slice(0, windowSize);
         
-        // Merge overlapping periods
-        const lastPeriod = periods[periods.length - 1];
-        if (lastPeriod && startTime <= lastPeriod.endTime + 200) {
-          lastPeriod.endTime = endTime;
-          lastPeriod.confidence = Math.max(lastPeriod.confidence, confidence);
-        } else {
-          periods.push({
-            startTime,
-            endTime,
-            confidence,
-          });
+        const powerCorrelation = this.calculateCorrelation(
+          window.map(s => s.power),
+          refWindow.map(s => s.power)
+        );
+        
+        const patternCorrelation = this.calculatePatternCorrelation(window, refWindow);
+        const confidence = (powerCorrelation * 0.6 + patternCorrelation * 0.4);
+        
+        if (confidence > threshold) {
+          const startTime = window[0].time;
+          const endTime = window[window.length - 1].time;
+          
+          const lastPeriod = periods[periods.length - 1];
+          if (lastPeriod && startTime <= lastPeriod.endTime + 200) {
+            lastPeriod.endTime = endTime;
+            lastPeriod.confidence = Math.max(lastPeriod.confidence, confidence);
+          } else {
+            periods.push({
+              startTime,
+              endTime,
+              confidence,
+            });
+          }
         }
       }
     }
@@ -118,11 +131,23 @@ export class EnergyDisaggregator {
     const features1 = this.extractFeatures(signal1);
     const features2 = this.extractFeatures(signal2);
     
-    // Compare feature similarity
+    // Compare feature similarity with more tolerance
     let similarity = 0;
-    similarity += 1 - Math.abs(features1.avgPower - features2.avgPower) / Math.max(features1.avgPower, features2.avgPower, 1);
-    similarity += 1 - Math.abs(features1.variance - features2.variance) / Math.max(features1.variance, features2.variance, 1);
-    similarity += 1 - Math.abs(features1.peakToPeak - features2.peakToPeak) / Math.max(features1.peakToPeak, features2.peakToPeak, 1);
+    
+    // Average power comparison with more tolerance
+    const powerDiff = Math.abs(features1.avgPower - features2.avgPower);
+    const maxPower = Math.max(features1.avgPower, features2.avgPower, 1);
+    similarity += Math.max(0, 1 - powerDiff / (maxPower * 0.5)); // More tolerant
+    
+    // Variance comparison with more tolerance
+    const varianceDiff = Math.abs(features1.variance - features2.variance);
+    const maxVariance = Math.max(features1.variance, features2.variance, 1);
+    similarity += Math.max(0, 1 - varianceDiff / (maxVariance * 0.3)); // More tolerant
+    
+    // Peak-to-peak comparison with more tolerance
+    const peakDiff = Math.abs(features1.peakToPeak - features2.peakToPeak);
+    const maxPeak = Math.max(features1.peakToPeak, features2.peakToPeak, 1);
+    similarity += Math.max(0, 1 - peakDiff / (maxPeak * 0.4)); // More tolerant
     
     return Math.min(1, similarity / 3);
   }
