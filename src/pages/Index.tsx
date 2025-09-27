@@ -5,7 +5,8 @@ import { Badge } from '@/components/ui/badge';
 import { ApplianceSwitch } from '@/components/ApplianceSwitch';
 import { WaveformChart } from '@/components/WaveformChart';
 import { PatternRecognition, EnergyDisaggregator } from '@/components/PatternRecognition';
-import { DEFAULT_APPLIANCES } from '@/types/appliance';
+import { EventLog } from '@/components/EventLog';
+import { DEFAULT_APPLIANCES, ActivityEvent } from '@/types/appliance';
 import { waveformGenerator } from '@/utils/waveformGenerator';
 import { toast } from 'sonner';
 import { Play, Pause, RotateCcw, BookOpen, Zap, Activity } from 'lucide-react';
@@ -15,6 +16,26 @@ const Index = () => {
   const [isSimulating, setIsSimulating] = useState(false);
   const [simulationTime, setSimulationTime] = useState(0);
   const [maxSimulationTime] = useState(10000); // 10 seconds
+  const [activityEvents, setActivityEvents] = useState<ActivityEvent[]>([]);
+
+  // Helper function to create activity events
+  const createActivityEvent = (
+    type: ActivityEvent['type'], 
+    message: string,
+    applianceId?: string,
+    applianceName?: string,
+    isOn?: boolean,
+    powerRating?: number
+  ): ActivityEvent => ({
+    id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    timestamp: Date.now(),
+    type,
+    message,
+    applianceId,
+    applianceName,
+    isOn,
+    powerRating
+  });
 
   const handleApplianceToggle = (id: string, isOn: boolean) => {
     setAppliances(prev => prev.map(app => 
@@ -23,6 +44,17 @@ const Index = () => {
     
     const appliance = appliances.find(a => a.id === id);
     if (appliance) {
+      // Create activity event for appliance toggle
+      const event = createActivityEvent(
+        'appliance_toggle',
+        `${appliance.name} turned ${isOn ? 'ON' : 'OFF'}`,
+        appliance.id,
+        appliance.name,
+        isOn,
+        appliance.powerRating
+      );
+      setActivityEvents(prev => [...prev, event]);
+
       toast(
         isOn 
           ? `${appliance.name} turned ON` 
@@ -40,6 +72,14 @@ const Index = () => {
   const startSimulation = () => {
     setIsSimulating(true);
     setSimulationTime(0);
+    
+    // Log simulation start event
+    const event = createActivityEvent(
+      'simulation_start',
+      'Simulation started - Real-time monitoring active'
+    );
+    setActivityEvents(prev => [...prev, event]);
+    
     toast("Realtime simulation started! Toggle appliances to see live updates.", {
       duration: 3000,
     });
@@ -47,12 +87,28 @@ const Index = () => {
 
   const pauseSimulation = () => {
     setIsSimulating(false);
+    
+    // Log simulation pause event
+    const event = createActivityEvent(
+      'simulation_pause',
+      'Simulation paused - Monitoring stopped'
+    );
+    setActivityEvents(prev => [...prev, event]);
+    
     toast("Simulation paused", { duration: 1000 });
   };
 
   const resetSimulation = () => {
     setIsSimulating(false);
     setSimulationTime(0);
+    
+    // Clear activity log on reset and add reset event
+    const event = createActivityEvent(
+      'simulation_reset',
+      'Simulation reset - Activity log cleared'
+    );
+    setActivityEvents([event]); // Start fresh with just the reset event
+    
     toast("Simulation reset", { duration: 1000 });
   };
 
@@ -215,6 +271,9 @@ const Index = () => {
               individualSignatures={individualSignatures}
               referenceSignatures={referenceSignatures}
             />
+            
+            {/* Activity Log */}
+            <EventLog events={activityEvents} />
           </div>
           
           {/* Right Column */}
