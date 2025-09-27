@@ -33,6 +33,17 @@ export interface DisaggregationResult {
   }>;
 }
 
+export interface ActivityEvent {
+  id: string;
+  timestamp: number;
+  type: 'appliance_toggle' | 'simulation_start' | 'simulation_pause' | 'simulation_reset';
+  message: string;
+  applianceId?: string;
+  applianceName?: string;
+  isOn?: boolean;
+  powerRating?: number;
+}
+
 export const DEFAULT_APPLIANCES: Appliance[] = [
   {
     id: 'philips-60w',
