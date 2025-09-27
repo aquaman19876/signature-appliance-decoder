@@ -1,15 +1,18 @@
-import { useMemo } from 'react';
+import { useMemo, useState, useEffect, useRef } from 'react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
+import { Button } from '@/components/ui/button';
 import { Appliance, PowerSignature, DisaggregationResult } from '@/types/appliance';
-import { Brain, Target, Clock, Zap } from 'lucide-react';
+import { Brain, Target, Clock, Zap, Play, Pause, RotateCcw, Activity } from 'lucide-react';
 
 interface PatternRecognitionProps {
   appliances: Appliance[];
   aggregatedSignal: PowerSignature[];
   individualSignatures: Record<string, PowerSignature[]>;
   referenceSignatures: Record<string, PowerSignature[]>;
+  isSimulating: boolean;
+  onAnalysisStateChange?: (isAnalyzing: boolean) => void;
 }
 
 export class EnergyDisaggregator {
@@ -190,25 +193,192 @@ export const PatternRecognition = ({
   appliances, 
   aggregatedSignal, 
   individualSignatures,
-  referenceSignatures
+  referenceSignatures,
+  isSimulating,
+  onAnalysisStateChange
 }: PatternRecognitionProps) => {
   
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [collectedData, setCollectedData] = useState<PowerSignature[]>([]);
+  const [dataStreamActive, setDataStreamActive] = useState(false);
+  const [lastToggleTime, setLastToggleTime] = useState<number>(0);
+  const previousApplianceStates = useRef<Record<string, boolean>>({});
+  const dataCollectionInterval = useRef<NodeJS.Timeout | null>(null);
+  
+  // Track appliance toggle changes
+  useEffect(() => {
+    const currentStates = appliances.reduce((acc, appliance) => {
+      acc[appliance.id] = appliance.isOn;
+      return acc;
+    }, {} as Record<string, boolean>);
+    
+    // Check if any appliance state has changed
+    const hasStateChanged = appliances.some(appliance => 
+      previousApplianceStates.current[appliance.id] !== appliance.isOn
+    );
+    
+    if (hasStateChanged && isSimulating) {
+      setLastToggleTime(Date.now());
+      
+      // Start data collection when any appliance is turned on
+      const hasActiveAppliances = appliances.some(a => a.isOn);
+      if (hasActiveAppliances && !dataStreamActive) {
+        startDataCollection();
+      } else if (!hasActiveAppliances && dataStreamActive) {
+        stopDataCollection();
+      }
+    }
+    
+    previousApplianceStates.current = currentStates;
+  }, [appliances, isSimulating, dataStreamActive]);
+  
+  // Stop data collection when simulation stops
+  useEffect(() => {
+    if (!isSimulating && dataStreamActive) {
+      stopDataCollection();
+    }
+  }, [isSimulating, dataStreamActive]);
+  
+  const startDataCollection = () => {
+    if (dataCollectionInterval.current) {
+      clearInterval(dataCollectionInterval.current);
+    }
+    
+    setDataStreamActive(true);
+    setIsAnalyzing(true);
+    setCollectedData([]);
+    onAnalysisStateChange?.(true);
+    
+    // Collect data every 100ms for real-time analysis
+    dataCollectionInterval.current = setInterval(() => {
+      if (aggregatedSignal.length > 0) {
+        setCollectedData(prev => {
+          const newData = [...prev, ...aggregatedSignal.slice(-10)]; // Take last 10 samples
+          // Keep only last 500 samples to prevent memory issues
+          return newData.slice(-500);
+        });
+      }
+    }, 100);
+  };
+  
+  const stopDataCollection = () => {
+    if (dataCollectionInterval.current) {
+      clearInterval(dataCollectionInterval.current);
+      dataCollectionInterval.current = null;
+    }
+    
+    setDataStreamActive(false);
+    setIsAnalyzing(false);
+    onAnalysisStateChange?.(false);
+  };
+  
+  const resetAnalysis = () => {
+    stopDataCollection();
+    setCollectedData([]);
+  };
+  
+  // Clean up on unmount
+  useEffect(() => {
+    return () => {
+      if (dataCollectionInterval.current) {
+        clearInterval(dataCollectionInterval.current);
+      }
+    };
+  }, []);
+  
   const disaggregationResults = useMemo(() => {
+    // Use collected data when actively analyzing, otherwise use current aggregated signal
+    const dataToAnalyze = dataStreamActive && collectedData.length > 0 ? collectedData : aggregatedSignal;
+    
+    if (!isAnalyzing && !dataStreamActive) {
+      return [];
+    }
+    
     return EnergyDisaggregator.disaggregate(
-      aggregatedSignal, 
+      dataToAnalyze, 
       appliances, 
       individualSignatures, 
       referenceSignatures
     );
-  }, [aggregatedSignal, appliances, individualSignatures, referenceSignatures]);
+  }, [collectedData, aggregatedSignal, appliances, individualSignatures, referenceSignatures, isAnalyzing, dataStreamActive]);
   
   const totalEnergyDetected = disaggregationResults.reduce((sum, result) => sum + result.energyConsumed, 0);
+  const activeAppliances = appliances.filter(a => a.isOn);
+  const samplesCollected = dataStreamActive ? collectedData.length : aggregatedSignal.length;
   
   return (
     <Card className="p-4">
-      <div className="flex items-center gap-2 mb-4">
-        <Brain className="w-5 h-5 text-energy-secondary" />
-        <h3 className="text-lg font-semibold">Pattern Recognition & Disaggregation</h3>
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <Brain className="w-5 h-5 text-energy-secondary" />
+          <h3 className="text-lg font-semibold">Pattern Recognition & Disaggregation</h3>
+          {dataStreamActive && (
+            <Badge className="bg-energy-success animate-pulse text-xs">
+              <Activity className="w-3 h-3 mr-1" />
+              Live Analysis
+            </Badge>
+          )}
+        </div>
+        
+        <div className="flex items-center gap-2">
+          <Button
+            onClick={startDataCollection}
+            disabled={!isSimulating || activeAppliances.length === 0 || dataStreamActive}
+            size="sm"
+            className="bg-energy-primary hover:bg-energy-primary/90"
+          >
+            <Play className="w-3 h-3 mr-1" />
+            Start Analysis
+          </Button>
+          
+          <Button
+            onClick={stopDataCollection}
+            disabled={!dataStreamActive}
+            size="sm"
+            variant="outline"
+          >
+            <Pause className="w-3 h-3 mr-1" />
+            Stop
+          </Button>
+          
+          <Button
+            onClick={resetAnalysis}
+            size="sm"
+            variant="outline"
+          >
+            <RotateCcw className="w-3 h-3 mr-1" />
+            Reset
+          </Button>
+        </div>
+      </div>
+      
+      {/* Data Collection Status */}
+      <div className="mb-4 p-3 bg-muted/30 rounded-lg">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm">
+          <div className="flex items-center gap-2">
+            <div className={`w-2 h-2 rounded-full ${
+              dataStreamActive ? 'bg-energy-success animate-pulse' : 'bg-gray-400'
+            }`} />
+            <span className="font-medium">
+              Data Stream: {dataStreamActive ? 'Active' : 'Stopped'}
+            </span>
+          </div>
+          
+          <div className="flex items-center gap-2">
+            <Target className="w-3 h-3 text-muted-foreground" />
+            <span>{samplesCollected} samples collected</span>
+          </div>
+          
+          <div className="flex items-center gap-2">
+            <Activity className="w-3 h-3 text-muted-foreground" />
+            <span>{activeAppliances.length} appliances active</span>
+          </div>
+          
+          <div className="flex items-center gap-2">
+            <Clock className="w-3 h-3 text-muted-foreground" />
+            <span>Last toggle: {lastToggleTime ? `${((Date.now() - lastToggleTime) / 1000).toFixed(1)}s ago` : 'Never'}</span>
+          </div>
+        </div>
       </div>
       
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
@@ -256,8 +426,17 @@ export const PatternRecognition = ({
         {disaggregationResults.length === 0 ? (
           <div className="text-center py-8 text-muted-foreground">
             <Brain className="w-12 h-12 mx-auto mb-2 opacity-50" />
-            <p>No clear patterns detected. Try turning on appliances or starting the simulation!</p>
-            <p className="text-xs mt-1">The AI analyzes power signatures to identify individual appliances</p>
+            {!dataStreamActive ? (
+              <>
+                <p>Data collection stopped. Click "Start Analysis" to begin pattern recognition!</p>
+                <p className="text-xs mt-1">Toggle appliances and start analysis to see real-time disaggregation</p>
+              </>
+            ) : (
+              <>
+                <p>Collecting data... {samplesCollected} samples gathered</p>
+                <p className="text-xs mt-1">The AI is analyzing power signatures to identify individual appliances</p>
+              </>
+            )}
           </div>
         ) : (
           disaggregationResults.map((result) => (

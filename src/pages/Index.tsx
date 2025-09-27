@@ -15,6 +15,11 @@ const Index = () => {
   const [isSimulating, setIsSimulating] = useState(false);
   const [simulationTime, setSimulationTime] = useState(0);
   const [maxSimulationTime] = useState(10000); // 10 seconds
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+
+  const handleAnalysisStateChange = (analyzing: boolean) => {
+    setIsAnalyzing(analyzing);
+  };
 
   const handleApplianceToggle = (id: string, isOn: boolean) => {
     setAppliances(prev => prev.map(app => 
@@ -185,6 +190,11 @@ const Index = () => {
                 Live Simulation Running
               </Badge>
             )}
+            {isAnalyzing && (
+              <Badge className="bg-energy-secondary animate-pulse">
+                AI Analyzing Pattern
+              </Badge>
+            )}
           </div>
         </div>
 
@@ -214,6 +224,8 @@ const Index = () => {
               aggregatedSignal={aggregatedSignal}
               individualSignatures={individualSignatures}
               referenceSignatures={referenceSignatures}
+              isSimulating={isSimulating}
+              onAnalysisStateChange={handleAnalysisStateChange}
             />
           </div>
           
